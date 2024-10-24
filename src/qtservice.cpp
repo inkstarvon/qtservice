@@ -1,42 +1,5 @@
-/****************************************************************************
-**
-** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/legal
-**
-** This file is part of the Qt Solutions component.
-**
-** $QT_BEGIN_LICENSE:BSD$
-** You may use this file under the terms of the BSD license as follows:
-**
-** "Redistribution and use in source and binary forms, with or without
-** modification, are permitted provided that the following conditions are
-** met:
-**   * Redistributions of source code must retain the above copyright
-**     notice, this list of conditions and the following disclaimer.
-**   * Redistributions in binary form must reproduce the above copyright
-**     notice, this list of conditions and the following disclaimer in
-**     the documentation and/or other materials provided with the
-**     distribution.
-**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
-**     of its contributors may be used to endorse or promote products derived
-**     from this software without specific prior written permission.
-**
-**
-** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-** "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+// Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
+// SPDX-License-Identifier: BSD-3-Clause
 
 #include "qtservice.h"
 #include "qtservice_p.h"
@@ -48,6 +11,7 @@
 
 #if defined(QTSERVICE_DEBUG)
 #include <QDebug>
+#include <QString>
 #include <QFile>
 #include <QTime>
 #include <QMutex>
@@ -64,25 +28,31 @@ static void qtServiceCloseDebugLog()
 {
     if (!f)
         return;
-    QString ps(QTime::currentTime().toString("HH:mm:ss.zzz ") + QLatin1String("--- DEBUG LOG CLOSED ---\n\n"));
-    f->write(ps.toAscii());
+    f->write(QTime::currentTime().toString("HH:mm:ss.zzz").toLatin1());
+    f->write(" --- DEBUG LOG CLOSED ---\n\n");
     f->flush();
     f->close();
     delete f;
     f = 0;
 }
 
+#if QT_VERSION >= 0x050000
+void qtServiceLogDebug(QtMsgType type, const QMessageLogContext &context, const QString &msg)
+#else
 void qtServiceLogDebug(QtMsgType type, const char* msg)
+#endif
 {
     static QMutex mutex;
     QMutexLocker locker(&mutex);
-    QString s(QTime::currentTime().toString("HH:mm:ss.zzz "));
-    s += QString("[%1] ").arg(
 #if defined(Q_OS_WIN32)
-                               GetCurrentProcessId());
+    const qulonglong processId = GetCurrentProcessId();
 #else
-                               getpid());
+    const qulonglong processId = getpid();
 #endif
+    QByteArray s(QTime::currentTime().toString("HH:mm:ss.zzz").toLatin1());
+    s += " [";
+    s += QByteArray::number(processId);
+    s += "] ";
 
     if (!f) {
 #if defined(Q_OS_WIN32)
@@ -95,32 +65,39 @@ void qtServiceLogDebug(QtMsgType type, const char* msg)
             f = 0;
             return;
         }
-        QString ps(QLatin1String("\n") + s + QLatin1String("--- DEBUG LOG OPENED ---\n"));
-        f->write(ps.toAscii());
+        QByteArray ps('\n' + s + "--- DEBUG LOG OPENED ---\n");
+        f->write(ps);
     }
 
     switch (type) {
     case QtWarningMsg:
-        s += QLatin1String("WARNING: ");
+        s += "WARNING: ";
         break;
     case QtCriticalMsg:
-        s += QLatin1String("CRITICAL: ");
+        s += "CRITICAL: ";
         break;
     case QtFatalMsg:
-        s+= QLatin1String("FATAL: ");
+        s+= "FATAL: ";
         break;
     case QtDebugMsg:
-        s += QLatin1String("DEBUG: ");
+        s += "DEBUG: ";
         break;
     default:
         // Nothing
         break;
     }
 
+#if QT_VERSION >= 0x050400
+    s += qFormatLogMessage(type, context, msg).toLocal8Bit();
+#elif QT_VERSION >= 0x050000
+    s += msg.toLocal8Bit();
+    Q_UNUSED(context)
+#else
     s += msg;
-    s += QLatin1String("\n");
+#endif
+    s += '\n';
 
-    f->write(s.toAscii());
+    f->write(s);
     f->flush();
 
     if (type == QtFatalMsg) {
@@ -625,7 +602,11 @@ int QtServiceBasePrivate::run(bool asService, const QStringList &argList)
 QtServiceBase::QtServiceBase(int argc, char **argv, const QString &name)
 {
 #if defined(QTSERVICE_DEBUG)
+#  if QT_VERSION >= 0x050000
+    qInstallMessageHandler(qtServiceLogDebug);
+#  else
     qInstallMsgHandler(qtServiceLogDebug);
+#  endif
     qAddPostRoutine(qtServiceCloseDebugLog);
 #endif
 
@@ -817,11 +798,13 @@ int QtServiceBase::exec()
             d_ptr->controller.sendCommand(code);
             return 0;
         } else  if (a == QLatin1String("-h") || a == QLatin1String("-help")) {
-            printf("\n%s -[i|u|e|s|v|h]\n"
+            printf("\n%s -[i|u|e|t|p|r|c|v|h]\n"
                    "\t-i(nstall) [account] [password]\t: Install the service, optionally using given account and password\n"
                    "\t-u(ninstall)\t: Uninstall the service.\n"
                    "\t-e(xec)\t\t: Run as a regular application. Useful for debugging.\n"
                    "\t-t(erminate)\t: Stop the service.\n"
+                   "\t-p(ause)\t: Pause the service.\n"
+                   "\t-r(esume)\t: Resume a paused service.\n"
                    "\t-c(ommand) num\t: Send command code num to the service.\n"
                    "\t-v(ersion)\t: Print version and status information.\n"
                    "\t-h(elp)   \t: Show this help\n"
@@ -897,14 +880,10 @@ QtServiceBase *QtServiceBase::instance()
     This function is called in reply to controller requests. The
     default implementation does nothing.
 
-    If you return successfullyStopped = false,
-    you MUST call quit() yourself!!!!!!!!!!
-
     \sa start(), QtServiceController::stop()
 */
-void QtServiceBase::stop(bool& successfullyStopped)
+void QtServiceBase::stop()
 {
-  successfullyStopped = true;
 }
 
 /*!
@@ -1111,6 +1090,3 @@ void QtServiceBase::processCommand(int /*code*/)
 
     \reimp
 */
-
-
-
