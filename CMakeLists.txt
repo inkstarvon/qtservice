@@ -1,88 +1,77 @@
-cmake_minimum_required(VERSION 2.8)
-PROJECT(qtservice)
+cmake_minimum_required(VERSION 3.14)
+project(qtservice)
 
-OPTION(${PROJECT_NAME}_BUILD_SHARED "Build ${PROJECT_NAME} as shared libraries" true)
-OPTION(USE_QT_5 "Use Qt5" NO)
+option(${PROJECT_NAME}_BUILD_SHARED "Build ${PROJECT_NAME} as shared libraries" true)
+option(USE_QT_5 "Use Qt5" YES)
 
-SET(${PROJECT_NAME}-qt-components QtCore)
+set(${PROJECT_NAME}-qt-components QtCore QtNetwork)
 
-ADD_DEFINITIONS(-DUNICODE)
+add_definitions(-DUNICODE)
 
-IF(USE_QT_5)
-	FIND_PACKAGE(Qt5Core)
+if(USE_QT_5)
+    find_package(Qt5 REQUIRED COMPONENTS Core Network)
+else()
+    set(QT_DONT_USE_QTGUI TRUE)
+    find_package(Qt4 COMPONENTS ${${PROJECT_NAME}-qt-components})
+    include(${QT_USE_FILE})
+endif()
 
-	IF(NOT WIN32)
-		FIND_PACKAGE(Qt5Network)
-	ENDIF()
-ELSE()
-	SET(QT_DONT_USE_QTGUI TRUE)
-	IF(NOT WIN32)
-	  SET(QT_USE_QTNETWORK TRUE)
-	  SET(${PROJECT_NAME}-qt-components ${${PROJECT_NAME}-qt-components} QtNetwork)
-	ENDIF()
-
-	find_package(Qt4 COMPONENTS ${${PROJECT_NAME}-qt-components})
-
-	include(${QT_USE_FILE})
-
-ENDIF()
-
-IF(MSVC AND BUILD_SHARED_LIBS)
-  ADD_DEFINITIONS("/DQT_QTSERVICE_EXPORT=__declspec(dllexport)")
-ENDIF()
+if(MSVC AND BUILD_SHARED_LIBS)
+    add_definitions("/DQT_QTSERVICE_EXPORT=__declspec(dllexport)")
+endif()
 
 # generate moc files
-set(CMAKE_AUTOMOC TRUE)
+set(CMAKE_AUTOMOC ON)
 
-SET(${PROJECT_NAME}-sources qtservice.cpp)
-
-IF (WIN32)
-  SET(${PROJECT_NAME}-sources ${${PROJECT_NAME}-sources} qtservice_win.cpp)
-ELSEIF(UNIX)
-  SET(${PROJECT_NAME}-sources ${${PROJECT_NAME}-sources} qtservice_unix.cpp qtunixsocket.cpp qtunixserversocket.cpp)
-ENDIF()
+set(${PROJECT_NAME}-sources qtservice.cpp)
+if(WIN32)
+    set(${PROJECT_NAME}-sources ${${PROJECT_NAME}-sources} qtservice_win.cpp)
+elseif(UNIX)
+    set(${PROJECT_NAME}-sources ${${PROJECT_NAME}-sources} qtservice_unix.cpp qtunixsocket.cpp qtunixserversocket.cpp)
+endif()
 
 # for #include of generated moc files
-INCLUDE_DIRECTORIES(${CMAKE_CURRENT_BINARY_DIR})
-    
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
+
 # for #include of moc headers from binary tree
-INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-ADD_LIBRARY(${PROJECT_NAME} ${${PROJECT_NAME}-sources} ${${PROJECT_NAME}-mocs})
+add_library(${PROJECT_NAME} ${${PROJECT_NAME}-sources})
 
-IF(NOT USE_QT_5)
-	TARGET_LINK_LIBRARIES(${PROJECT_NAME} ${QT_LIBRARIES})
-ELSE()
-	qt5_use_modules(${PROJECT_NAME} Core Network)
-ENDIF()
+if(USE_QT_5)
+    target_link_libraries(${PROJECT_NAME} Qt5::Core Qt5::Network)
+else()
+    target_link_libraries(${PROJECT_NAME} ${QT_LIBRARIES})
+endif()
 
-INSTALL(TARGETS ${PROJECT_NAME}
+install(TARGETS ${PROJECT_NAME}
     EXPORT flow-LibraryDependencies
-		RUNTIME DESTINATION bin
-		LIBRARY DESTINATION lib
-		ARCHIVE DESTINATION lib
-		)
+    RUNTIME DESTINATION bin
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+)
 
-INSTALL(FILES qtservice.h QtServiceBase QtServiceController DESTINATION ${QT_INCLUDE_DIR}/${PROJECT_NAME})
+install(FILES qtservice.h QtServiceBase QtServiceController DESTINATION ${QT_INCLUDE_DIR}/${PROJECT_NAME})
 
-IF(UNIX)
-  INSTALL(FILES qtunixserversocket.h qtunixsocket.h DESTINATION ${QT_INCLUDE_DIR}/${PROJECT_NAME})
-ENDIF()
+if(UNIX)
+    install(FILES qtunixserversocket.h qtunixsocket.h DESTINATION ${QT_INCLUDE_DIR}/${PROJECT_NAME})
+endif()
 
-CONFIGURE_FILE( ${CMAKE_CURRENT_SOURCE_DIR}/ProjectConfig.cmake.in
-	${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config.cmake @ONLY )
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/ProjectConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config.cmake @ONLY)
 
-INSTALL(FILES ${PROJECT_BINARY_DIR}/${PROJECT_NAME}-config.cmake
-	DESTINATION share/cmake/${PROJECT_NAME} COMPONENT Development )
+install(FILES ${PROJECT_BINARY_DIR}/${PROJECT_NAME}-config.cmake
+    DESTINATION share/cmake/${PROJECT_NAME} COMPONENT Development)
 
-INSTALL(EXPORT flow-LibraryDependencies DESTINATION share/cmake/${PROJECT_NAME} COMPONENT Development)
+install(EXPORT flow-LibraryDependencies DESTINATION share/cmake/${PROJECT_NAME} COMPONENT Development)
 
 set(QTSERVICE_INCLUDE_DIRS
-  ${CMAKE_CURRENT_SOURCE_DIR}
-  CACHE INTERNAL "${PROJECT_NAME} include directories"
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    CACHE INTERNAL "${PROJECT_NAME} include directories"
 )
 
 set(QTSERVICE_LIBRARIES
-  ${PROJECT_NAME}
-  CACHE INTERNAL "${PROJECT_NAME} libraries"
+    ${PROJECT_NAME}
+    CACHE INTERNAL "${PROJECT_NAME} libraries"
 )
+
